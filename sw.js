@@ -1,5 +1,5 @@
 // ยอดเลือดไทย — Service Worker v1
-const CACHE_NAME = 'yodlerd-thai-v1';
+const CACHE_NAME = 'yodlerd-thai';
 const ASSETS = [
   '/',
   '/index.html',
