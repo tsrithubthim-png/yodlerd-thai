@@ -1760,44 +1760,62 @@ document.addEventListener('keyup',e=>{
 // Keyboard held-movement is now handled inside gameLoop()
 
 // ════════════════════════════════════
-//  INPUT — MOBILE TOUCH (Fixed)
+//  INPUT — MOBILE TOUCH (v3)
 // ════════════════════════════════════
 
-// Track active touches per button to avoid ghost-press
-function setupMobileBtn(id, onDown, onUp) {
+// ── HOLD BUTTON (ซ้าย, ขวา, ป้องกัน) ──
+// กดค้างได้ ปล่อยแล้วหยุด ป้องกัน stuck ด้วย touchcancel
+function setupHoldBtn(id, onDown, onUp) {
   const el = document.getElementById(id);
   if (!el) return;
-  let active = false;
+  let held = false;
 
   function doDown(e) {
     e.preventDefault();
     e.stopPropagation();
-    if (active) return;
-    active = true;
+    if (held) return;
+    held = true;
     el.classList.add('pressed');
     if (onDown) onDown();
   }
   function doUp(e) {
     e.preventDefault();
     e.stopPropagation();
-    if (!active) return;
-    active = false;
+    if (!held) return;
+    held = false;
     el.classList.remove('pressed');
     if (onUp) onUp();
   }
 
-  // Touch events — include touchcancel to prevent stuck state
   el.addEventListener('touchstart',  doDown, { passive: false });
   el.addEventListener('touchend',    doUp,   { passive: false });
   el.addEventListener('touchcancel', doUp,   { passive: false });
-
-  // Mouse events for desktop testing
-  el.addEventListener('mousedown',  doDown);
-  el.addEventListener('mouseup',    doUp);
-  el.addEventListener('mouseleave', doUp);
+  el.addEventListener('mousedown',   doDown);
+  el.addEventListener('mouseup',     doUp);
+  el.addEventListener('mouseleave',  doUp);
 }
 
-// D-Pad movement — use requestAnimationFrame loop, not nested setInterval
+// ── TAP BUTTON (กระโดด, ต่อย, เตะ, สกิล, ท่าไม้ตาย) ──
+// กดแต่ละครั้ง = ยิงทันที ไม่มี lock ไม่มี active flag
+// กดซ้ำได้ทันทีทุกครั้งที่นิ้วแตะใหม่
+function setupTapBtn(id, onTap) {
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  function doTap(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    el.classList.add('pressed');
+    if (onTap) onTap();
+    // Flash effect สั้น ๆ แล้วปล่อย ไม่ block การกดครั้งถัดไป
+    setTimeout(() => el.classList.remove('pressed'), 80);
+  }
+
+  el.addEventListener('touchstart', doTap, { passive: false });
+  el.addEventListener('mousedown',  doTap);
+}
+
+// ── D-Pad Movement (RAF loop) ──
 let moveDir = 0;
 let moveRAF = null;
 
@@ -1821,25 +1839,25 @@ function stopMove() {
   if (player && fightActive) player.move(0);
 }
 
-setupMobileBtn('btn-left',  () => startMove(-1), () => stopMove());
-setupMobileBtn('btn-right', () => startMove(1),  () => stopMove());
-setupMobileBtn('btn-up',    () => { if (player && fightActive) player.jump(); });
-setupMobileBtn('btn-block',
+// ── ผูกปุ่มทุกตัว ──
+// HOLD: ซ้าย ขวา ป้องกัน
+setupHoldBtn('btn-left',  () => startMove(-1), () => stopMove());
+setupHoldBtn('btn-right', () => startMove(1),  () => stopMove());
+setupHoldBtn('btn-block',
   () => { if (player && fightActive) player.block(true); },
   () => { if (player) player.block(false); }
 );
-setupMobileBtn('btn-punch', () => { if (player && fightActive && enemy) player.attack('punch',   enemy); });
-setupMobileBtn('btn-kick',  () => { if (player && fightActive && enemy) player.attack('kick',    enemy); });
-setupMobileBtn('btn-spec',  () => { if (player && fightActive && enemy) player.attack('special', enemy); });
-setupMobileBtn('btn-ult',   () => { if (player && fightActive && enemy) player.attack('ultimate',enemy); });
 
-// Safety: if all touches lift off the screen, reset movement
-document.addEventListener('touchend', (e) => {
-  if (e.touches.length === 0) stopMove();
-}, { passive: true });
-document.addEventListener('touchcancel', (e) => {
-  if (e.touches.length === 0) stopMove();
-}, { passive: true });
+// TAP: กระโดด ต่อย เตะ สกิล ท่าไม้ตาย — กดซ้ำได้ทันที
+setupTapBtn('btn-up',   () => { if (player && fightActive) player.jump(); });
+setupTapBtn('btn-punch',() => { if (player && fightActive && enemy) player.attack('punch',   enemy); });
+setupTapBtn('btn-kick', () => { if (player && fightActive && enemy) player.attack('kick',    enemy); });
+setupTapBtn('btn-spec', () => { if (player && fightActive && enemy) player.attack('special', enemy); });
+setupTapBtn('btn-ult',  () => { if (player && fightActive && enemy) player.attack('ultimate',enemy); });
+
+// Safety: นิ้วทุกนิ้วยกออกจากจอ = หยุดเดิน
+document.addEventListener('touchend',    (e) => { if (e.touches.length === 0) stopMove(); }, { passive: true });
+document.addEventListener('touchcancel', (e) => { if (e.touches.length === 0) stopMove(); }, { passive: true });
 
 // ════════════════════════════════════
 //  INIT
