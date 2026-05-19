@@ -1715,6 +1715,8 @@ function gameLoop(){
   bgOff+=0.3; drawBG(STAGES[stageIdx].bgKey,bgOff);
   if(player&&enemy){
     if(fightActive){
+      // Keyboard held-movement (no separate setInterval needed)
+      if(keys['KeyA'])player.move(-1); else if(keys['KeyD'])player.move(1);
       player.update(enemy); enemy.update(player); if(ai)ai.update(player);
       if(!deathChecked){
         if((player.state==='dead'||player.hp<=0)&&!player.deathHandled){
@@ -1755,52 +1757,89 @@ document.addEventListener('keyup',e=>{
   }
   if(e.code==='KeyS')player.block(false);
 });
-setInterval(()=>{
-  if(!player||!fightActive)return;
-  if(keys['KeyA'])player.move(-1); else if(keys['KeyD'])player.move(1);
-},16);
+// Keyboard held-movement is now handled inside gameLoop()
 
 // ════════════════════════════════════
-//  INPUT — MOBILE TOUCH
+//  INPUT — MOBILE TOUCH (Fixed)
 // ════════════════════════════════════
-const mobileState={left:false,right:false,block:false};
 
-function setupMobileBtn(id,onDown,onUp){
-  const el=document.getElementById(id);
-  if(!el)return;
-  const down=(e)=>{e.preventDefault();el.classList.add('pressed');if(onDown)onDown();};
-  const up=(e)=>{e.preventDefault();el.classList.remove('pressed');if(onUp)onUp();};
-  el.addEventListener('touchstart',down,{passive:false});
-  el.addEventListener('touchend',up,{passive:false});
-  el.addEventListener('mousedown',down);
-  el.addEventListener('mouseup',up);
-  el.addEventListener('mouseleave',up);
+// Track active touches per button to avoid ghost-press
+function setupMobileBtn(id, onDown, onUp) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  let active = false;
+
+  function doDown(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (active) return;
+    active = true;
+    el.classList.add('pressed');
+    if (onDown) onDown();
+  }
+  function doUp(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!active) return;
+    active = false;
+    el.classList.remove('pressed');
+    if (onUp) onUp();
+  }
+
+  // Touch events — include touchcancel to prevent stuck state
+  el.addEventListener('touchstart',  doDown, { passive: false });
+  el.addEventListener('touchend',    doUp,   { passive: false });
+  el.addEventListener('touchcancel', doUp,   { passive: false });
+
+  // Mouse events for desktop testing
+  el.addEventListener('mousedown',  doDown);
+  el.addEventListener('mouseup',    doUp);
+  el.addEventListener('mouseleave', doUp);
 }
 
-// D-Pad movement with hold
-let moveInterval=null;
-function startMove(dir){
-  if(!player||!fightActive)return;
-  player.move(dir);
-  if(moveInterval)clearInterval(moveInterval);
-  moveInterval=setInterval(()=>{if(player&&fightActive)player.move(dir);},50);
-}
-function stopMove(){
-  clearInterval(moveInterval);moveInterval=null;
-  if(player&&fightActive)player.move(0);
+// D-Pad movement — use requestAnimationFrame loop, not nested setInterval
+let moveDir = 0;
+let moveRAF = null;
+
+function moveTick() {
+  if (moveDir !== 0 && player && fightActive) {
+    player.move(moveDir);
+    moveRAF = requestAnimationFrame(moveTick);
+  } else {
+    moveRAF = null;
+  }
 }
 
-setupMobileBtn('btn-left',()=>startMove(-1),()=>stopMove());
-setupMobileBtn('btn-right',()=>startMove(1),()=>stopMove());
-setupMobileBtn('btn-up',()=>{if(player&&fightActive)player.jump();});
+function startMove(dir) {
+  moveDir = dir;
+  if (!moveRAF) moveRAF = requestAnimationFrame(moveTick);
+}
+
+function stopMove() {
+  moveDir = 0;
+  if (moveRAF) { cancelAnimationFrame(moveRAF); moveRAF = null; }
+  if (player && fightActive) player.move(0);
+}
+
+setupMobileBtn('btn-left',  () => startMove(-1), () => stopMove());
+setupMobileBtn('btn-right', () => startMove(1),  () => stopMove());
+setupMobileBtn('btn-up',    () => { if (player && fightActive) player.jump(); });
 setupMobileBtn('btn-block',
-  ()=>{if(player&&fightActive)player.block(true);},
-  ()=>{if(player)player.block(false);}
+  () => { if (player && fightActive) player.block(true); },
+  () => { if (player) player.block(false); }
 );
-setupMobileBtn('btn-punch',()=>{if(player&&fightActive&&enemy)player.attack('punch',enemy);});
-setupMobileBtn('btn-kick',()=>{if(player&&fightActive&&enemy)player.attack('kick',enemy);});
-setupMobileBtn('btn-spec',()=>{if(player&&fightActive&&enemy)player.attack('special',enemy);});
-setupMobileBtn('btn-ult',()=>{if(player&&fightActive&&enemy)player.attack('ultimate',enemy);});
+setupMobileBtn('btn-punch', () => { if (player && fightActive && enemy) player.attack('punch',   enemy); });
+setupMobileBtn('btn-kick',  () => { if (player && fightActive && enemy) player.attack('kick',    enemy); });
+setupMobileBtn('btn-spec',  () => { if (player && fightActive && enemy) player.attack('special', enemy); });
+setupMobileBtn('btn-ult',   () => { if (player && fightActive && enemy) player.attack('ultimate',enemy); });
+
+// Safety: if all touches lift off the screen, reset movement
+document.addEventListener('touchend', (e) => {
+  if (e.touches.length === 0) stopMove();
+}, { passive: true });
+document.addEventListener('touchcancel', (e) => {
+  if (e.touches.length === 0) stopMove();
+}, { passive: true });
 
 // ════════════════════════════════════
 //  INIT
